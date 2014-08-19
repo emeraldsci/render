@@ -106,6 +106,26 @@ admin/edit
 home
 ~~~
 
+Alternatively, you may hook into an asset encoding tool like [go-bindata](https://github.com/jteeuwen/go-bindata). See the documentation on go-bindata for more information on its operation.
+
+An example of using go-bindata would be as follows:
+~~~
+go-bindata -pkg=webapp templates/...
+~~~
+
+And then when creating the `render.Render` instance you would use the following:
+~~~ go
+import "webapp"
+...
+render := render.NewWithCompiler(
+    opt, 
+    NewBinDataTemplateCompiler(
+        opt, 
+        webapp.Asset, 
+        webapp.AssetNames,
+        ))
+~~~
+
 ### Layouts
 `render.Render` provides a `yield` function for layouts to access:
 ~~~ go

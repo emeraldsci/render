@@ -86,15 +86,22 @@ type HTMLOptions struct {
 // Binary Data, and HTML templates out to a http Response.
 type Render struct {
 	// Customize Secure with an Options struct.
-	opt             Options
+	opt             *Options
 	templates       *template.Template
+	compiler        TemplateCompiler
 	compiledCharset string
 }
 
 // New constructs a new Render instance with the supplied options.
 func New(options Options) *Render {
+	return NewWithCompiler(&options, &FileTemplateCompiler{&options})
+}
+
+// New constructs a new Render instance with the supplied options.
+func NewWithCompiler(options *Options, compiler TemplateCompiler) *Render {
 	r := Render{
-		opt: options,
+		opt:      options,
+		compiler: compiler,
 	}
 
 	r.prepareOptions()
@@ -122,46 +129,7 @@ func (r *Render) prepareOptions() {
 }
 
 func (r *Render) compileTemplates() {
-	dir := r.opt.Directory
-	r.templates = template.New(dir)
-	r.templates.Delims(r.opt.Delims.Left, r.opt.Delims.Right)
-
-	// Walk the supplied directory and compile any files that match our extension list.
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		rel, err := filepath.Rel(dir, path)
-		if err != nil {
-			return err
-		}
-
-		ext := ""
-		if strings.Index(rel, ".") != -1 {
-			ext = "." + strings.Join(strings.Split(rel, ".")[1:], ".")
-		}
-
-		for _, extension := range r.opt.Extensions {
-			if ext == extension {
-
-				buf, err := ioutil.ReadFile(path)
-				if err != nil {
-					panic(err)
-				}
-
-				name := (rel[0 : len(rel)-len(ext)])
-				tmpl := r.templates.New(filepath.ToSlash(name))
-
-				// Add our funcmaps.
-				for _, funcs := range r.opt.Funcs {
-					tmpl.Funcs(funcs)
-				}
-
-				// Break out if this parsing fails. We don't want any silent server starts.
-				template.Must(tmpl.Funcs(helperFuncs).Parse(string(buf)))
-				break
-			}
-		}
-
-		return nil
-	})
+	r.templates = r.compiler.Compile()
 }
 
 // Render is the generic function called by XML, JSON, Data, HTML, and can be called by custom implementations.
@@ -274,4 +242,119 @@ func (r *Render) prepareHTMLOptions(htmlOpt []HTMLOptions) HTMLOptions {
 	return HTMLOptions{
 		Layout: r.opt.Layout,
 	}
+}
+
+// TemplateCompilers return a root *template.Template used by Render for it's HTML generation
+// funcationality.
+type TemplateCompiler interface {
+	// Compiles a tree of templates.
+	Compile() *template.Template
+}
+
+// FileTemplateCompiler traverses the Directory specified in the Render Options
+// and compiles those that have the correct Extention.
+//
+type FileTemplateCompiler struct {
+	opt *Options
+}
+
+func (c *FileTemplateCompiler) Compile() *template.Template {
+	var templates *template.Template
+	dir := c.opt.Directory
+	templates = template.New(dir)
+	templates.Delims(c.opt.Delims.Left, c.opt.Delims.Right)
+
+	// Walk the supplied directory and compile any files that match our extension list.
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+
+		ext := ""
+		if strings.Index(rel, ".") != -1 {
+			ext = "." + strings.Join(strings.Split(rel, ".")[1:], ".")
+		}
+
+		for _, extension := range c.opt.Extensions {
+			if ext == extension {
+
+				buf, err := ioutil.ReadFile(path)
+				if err != nil {
+					panic(err)
+				}
+
+				name := (rel[0 : len(rel)-len(ext)])
+				tmpl := templates.New(filepath.ToSlash(name))
+
+				// Add our funcmaps.
+				for _, funcs := range c.opt.Funcs {
+					tmpl.Funcs(funcs)
+				}
+
+				// Break out if this parsing fails. We don't want any silent server starts.
+				template.Must(tmpl.Funcs(helperFuncs).Parse(string(buf)))
+				break
+			}
+		}
+
+		return nil
+	})
+	return templates
+}
+
+type templateFunc func(name string) ([]byte, error)
+type templateNamesFunc func() []string
+
+type BinDataTemplateCompiler struct {
+	opt       *Options
+	tempFunc  templateFunc
+	tempNames templateNamesFunc
+}
+
+func NewBinDataTemplateCompiler(
+	opt *Options,
+	tFunc templateFunc,
+	tNames templateNamesFunc) *BinDataTemplateCompiler {
+
+	return &BinDataTemplateCompiler{
+		opt:       opt,
+		tempFunc:  tFunc,
+		tempNames: tNames,
+	}
+}
+
+func (c *BinDataTemplateCompiler) Compile() *template.Template {
+	var templates *template.Template
+	dir := c.opt.Directory
+
+	templates = template.New(dir)
+	templates.Delims(c.opt.Delims.Left, c.opt.Delims.Right)
+
+	for _, name := range c.tempNames() {
+		if !strings.HasPrefix(name, dir) {
+			continue
+		}
+		ext := filepath.Ext(name)
+		for _, extension := range c.opt.Extensions {
+			if ext == extension {
+				buf, err := c.tempFunc(name)
+				if err != nil {
+					panic(err)
+				}
+				tmplName := strings.TrimPrefix(strings.TrimSuffix(name, ext), dir)
+				if strings.Index(tmplName, "/") == 0 {
+					tmplName = tmplName[1:]
+				}
+				tmpl := templates.New(tmplName)
+
+				for _, funcs := range c.opt.Funcs {
+					tmpl.Funcs(funcs)
+				}
+				template.Must(tmpl.Funcs(helperFuncs).Parse(string(buf)))
+				break
+			}
+		}
+	}
+	return templates
 }

@@ -183,11 +183,48 @@ func TestRenderBadHTML(t *testing.T) {
 	expect(t, res.Body.String(), "html/template: \"nope\" is undefined\n")
 }
 
+func TestRenderBadHTMLBinData(t *testing.T) {
+	opt := &Options{Directory: "fixtures/basic"}
+	render := NewWithCompiler(
+		opt,
+		NewBinDataTemplateCompiler(opt, Asset, AssetNames),
+	)
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		render.HTML(w, http.StatusOK, "nope", nil)
+	})
+
+	res := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/foo", nil)
+	h.ServeHTTP(res, req)
+
+	expect(t, res.Code, 500)
+	expect(t, res.Body.String(), "html/template: \"nope\" is undefined\n")
+}
+
 func TestRenderHTML(t *testing.T) {
 	render := New(Options{
 		Directory: "fixtures/basic",
 	})
 
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		render.HTML(w, http.StatusOK, "hello", "gophers")
+	})
+
+	res := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/foo", nil)
+	h.ServeHTTP(res, req)
+
+	expect(t, res.Code, 200)
+	expect(t, res.Header().Get(ContentType), ContentHTML+"; charset=UTF-8")
+	expect(t, res.Body.String(), "<h1>Hello gophers</h1>\n")
+}
+
+func TestRenderHTMLBinData(t *testing.T) {
+	opt := &Options{Directory: "fixtures/basic"}
+	render := NewWithCompiler(
+		opt,
+		NewBinDataTemplateCompiler(opt, Asset, AssetNames),
+	)
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		render.HTML(w, http.StatusOK, "hello", "gophers")
 	})
@@ -220,11 +257,56 @@ func TestRenderXHTML(t *testing.T) {
 	expect(t, res.Body.String(), "<h1>Hello gophers</h1>\n")
 }
 
+func TestRenderXHTMLBinData(t *testing.T) {
+	opt := &Options{
+		Directory:       "fixtures/basic",
+		HTMLContentType: ContentXHTML,
+	}
+	render := NewWithCompiler(
+		opt,
+		NewBinDataTemplateCompiler(opt, Asset, AssetNames),
+	)
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		render.HTML(w, http.StatusOK, "hello", "gophers")
+	})
+
+	res := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/foo", nil)
+	h.ServeHTTP(res, req)
+
+	expect(t, res.Code, 200)
+	expect(t, res.Header().Get(ContentType), ContentXHTML+"; charset=UTF-8")
+	expect(t, res.Body.String(), "<h1>Hello gophers</h1>\n")
+}
+
 func TestRenderExtensions(t *testing.T) {
 	render := New(Options{
 		Directory:  "fixtures/basic",
 		Extensions: []string{".tmpl", ".html"},
 	})
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		render.HTML(w, http.StatusOK, "hypertext", nil)
+	})
+
+	res := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/foo", nil)
+	h.ServeHTTP(res, req)
+
+	expect(t, res.Code, 200)
+	expect(t, res.Header().Get(ContentType), ContentHTML+"; charset=UTF-8")
+	expect(t, res.Body.String(), "Hypertext!\n")
+}
+
+func TestRenderExtensionsBinData(t *testing.T) {
+	opt := &Options{
+		Directory:  "fixtures/basic",
+		Extensions: []string{".tmpl", ".html"},
+	}
+	render := NewWithCompiler(
+		opt,
+		NewBinDataTemplateCompiler(opt, Asset, AssetNames),
+	)
 
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		render.HTML(w, http.StatusOK, "hypertext", nil)
@@ -262,6 +344,34 @@ func TestRenderFuncs(t *testing.T) {
 	expect(t, res.Body.String(), "My custom function\n")
 }
 
+func TestRenderFuncsBinData(t *testing.T) {
+	opt := &Options{
+		Directory: "fixtures/custom_funcs",
+		Funcs: []template.FuncMap{
+			{
+				"myCustomFunc": func() string {
+					return "My custom function"
+				},
+			},
+		},
+	}
+
+	render := NewWithCompiler(
+		opt,
+		NewBinDataTemplateCompiler(opt, Asset, AssetNames),
+	)
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		render.HTML(w, http.StatusOK, "index", "gophers")
+	})
+
+	res := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/foo", nil)
+	h.ServeHTTP(res, req)
+
+	expect(t, res.Body.String(), "My custom function\n")
+}
+
 func TestRenderLayout(t *testing.T) {
 	render := New(Options{
 		Directory: "fixtures/basic",
@@ -279,11 +389,54 @@ func TestRenderLayout(t *testing.T) {
 	expect(t, res.Body.String(), "head\n<h1>gophers</h1>\n\nfoot\n")
 }
 
+func TestRenderLayoutBinData(t *testing.T) {
+	opt := &Options{
+		Directory: "fixtures/basic",
+		Layout:    "layout",
+	}
+
+	render := NewWithCompiler(
+		opt,
+		NewBinDataTemplateCompiler(opt, Asset, AssetNames),
+	)
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		render.HTML(w, http.StatusOK, "content", "gophers")
+	})
+
+	res := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/foo", nil)
+	h.ServeHTTP(res, req)
+
+	expect(t, res.Body.String(), "head\n<h1>gophers</h1>\n\nfoot\n")
+}
+
 func TestRenderLayoutCurrent(t *testing.T) {
 	render := New(Options{
 		Directory: "fixtures/basic",
 		Layout:    "current_layout",
 	})
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		render.HTML(w, http.StatusOK, "content", "gophers")
+	})
+
+	res := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/foo", nil)
+	h.ServeHTTP(res, req)
+
+	expect(t, res.Body.String(), "content head\n<h1>gophers</h1>\n\ncontent foot\n")
+}
+
+func TestRenderLayoutCurrentBinData(t *testing.T) {
+	opt := &Options{
+		Directory: "fixtures/basic",
+		Layout:    "current_layout",
+	}
+	render := NewWithCompiler(
+		opt,
+		NewBinDataTemplateCompiler(opt, Asset, AssetNames),
+	)
 
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		render.HTML(w, http.StatusOK, "content", "gophers")
@@ -314,10 +467,52 @@ func TestRenderNestedHTML(t *testing.T) {
 	expect(t, res.Body.String(), "<h1>Admin gophers</h1>\n")
 }
 
+func TestRenderNestedHTMLBinData(t *testing.T) {
+	opt := &Options{
+		Directory: "fixtures/basic",
+	}
+	render := NewWithCompiler(
+		opt,
+		NewBinDataTemplateCompiler(opt, Asset, AssetNames),
+	)
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		render.HTML(w, http.StatusOK, "admin/index", "gophers")
+	})
+
+	res := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/foo", nil)
+	h.ServeHTTP(res, req)
+
+	expect(t, res.Code, 200)
+	expect(t, res.Header().Get(ContentType), ContentHTML+"; charset=UTF-8")
+	expect(t, res.Body.String(), "<h1>Admin gophers</h1>\n")
+}
+
 func TestRenderBadPathHTML(t *testing.T) {
 	render := New(Options{
 		Directory: "../../../../../../../../../../../../../../../../fixtures/basic",
 	})
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		render.HTML(w, http.StatusOK, "hello", "gophers")
+	})
+
+	res := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/foo", nil)
+	h.ServeHTTP(res, req)
+
+	expect(t, res.Code, 500)
+}
+
+func TestRenderBadPathHTMLBinData(t *testing.T) {
+	opt := &Options{
+		Directory: "../../../../../../../../../../../../../../../../fixtures/basic",
+	}
+	render := NewWithCompiler(
+		opt,
+		NewBinDataTemplateCompiler(opt, Asset, AssetNames),
+	)
 
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		render.HTML(w, http.StatusOK, "hello", "gophers")
@@ -335,6 +530,29 @@ func TestRenderDelimiters(t *testing.T) {
 		Delims:    Delims{"{[{", "}]}"},
 		Directory: "fixtures/basic",
 	})
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		render.HTML(w, http.StatusOK, "delims", "gophers")
+	})
+
+	res := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/foo", nil)
+	h.ServeHTTP(res, req)
+
+	expect(t, res.Code, 200)
+	expect(t, res.Header().Get(ContentType), ContentHTML+"; charset=UTF-8")
+	expect(t, res.Body.String(), "<h1>Hello gophers</h1>")
+}
+
+func TestRenderDelimitersBinData(t *testing.T) {
+	opt := &Options{
+		Delims:    Delims{"{[{", "}]}"},
+		Directory: "fixtures/basic",
+	}
+	render := NewWithCompiler(
+		opt,
+		NewBinDataTemplateCompiler(opt, Asset, AssetNames),
+	)
 
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		render.HTML(w, http.StatusOK, "delims", "gophers")
@@ -424,11 +642,61 @@ func TestRenderDefaultCharsetHTML(t *testing.T) {
 	expect(t, res.Body.String(), "<h1>Hello gophers</h1>\n")
 }
 
+func TestRenderDefaultCharsetHTMLBinData(t *testing.T) {
+	opt := &Options{
+		Directory: "fixtures/basic",
+	}
+
+	render := NewWithCompiler(
+		opt,
+		NewBinDataTemplateCompiler(opt, Asset, AssetNames),
+	)
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		render.HTML(w, http.StatusOK, "hello", "gophers")
+	})
+
+	res := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/foo", nil)
+	h.ServeHTTP(res, req)
+
+	expect(t, res.Code, 200)
+	expect(t, res.Header().Get(ContentType), ContentHTML+"; charset=UTF-8")
+	// ContentLength should be deferred to the ResponseWriter and not Render
+	expect(t, res.Header().Get(ContentLength), "")
+	expect(t, res.Body.String(), "<h1>Hello gophers</h1>\n")
+}
+
 func TestRenderOverrideLayout(t *testing.T) {
 	render := New(Options{
 		Directory: "fixtures/basic",
 		Layout:    "layout",
 	})
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		render.HTML(w, http.StatusOK, "content", "gophers", HTMLOptions{
+			Layout: "another_layout",
+		})
+	})
+
+	res := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/foo", nil)
+	h.ServeHTTP(res, req)
+
+	expect(t, res.Code, 200)
+	expect(t, res.Header().Get(ContentType), ContentHTML+"; charset=UTF-8")
+	expect(t, res.Body.String(), "another head\n<h1>gophers</h1>\n\nanother foot\n")
+}
+
+func TestRenderOverrideLayoutBinData(t *testing.T) {
+	opt := &Options{
+		Directory: "fixtures/basic",
+		Layout:    "layout",
+	}
+	render := NewWithCompiler(
+		opt,
+		NewBinDataTemplateCompiler(opt, Asset, AssetNames),
+	)
 
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		render.HTML(w, http.StatusOK, "content", "gophers", HTMLOptions{
@@ -451,6 +719,39 @@ func TestRenderNoRace(t *testing.T) {
 		Directory: "fixtures/basic",
 	})
 
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		render.HTML(w, http.StatusOK, "hello", "gophers")
+	})
+
+	done := make(chan bool)
+	doreq := func() {
+		res := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/foo", nil)
+
+		h.ServeHTTP(res, req)
+
+		expect(t, res.Code, 200)
+		expect(t, res.Header().Get(ContentType), ContentHTML+"; charset=UTF-8")
+		// ContentLength should be deferred to the ResponseWriter and not Render
+		expect(t, res.Header().Get(ContentLength), "")
+		expect(t, res.Body.String(), "<h1>Hello gophers</h1>\n")
+		done <- true
+	}
+	// Run two requests to check there is no race condition
+	go doreq()
+	go doreq()
+	<-done
+	<-done
+}
+
+func TestRenderNoRaceBinData(t *testing.T) {
+	opt := &Options{
+		Directory: "fixtures/basic",
+	}
+	render := NewWithCompiler(
+		opt,
+		NewBinDataTemplateCompiler(opt, Asset, AssetNames),
+	)
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		render.HTML(w, http.StatusOK, "hello", "gophers")
 	})
